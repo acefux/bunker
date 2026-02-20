@@ -1,0 +1,144 @@
+
+<div class="min-h-screen bg-zinc-950 text-zinc-200 font-sans selection:bg-emerald-500 selection:text-black flex flex-col relative">
+  
+  <!-- VISUAL FX LAYERS -->
+  <!-- Snow Layer (Visible only when body has theme-frost class) -->
+  <div class="snow-container"></div>
+  
+  <!-- Red Alert Scanlines (Visual handled by CSS body class theme-heat-wave) -->
+
+  <!-- DEVELOPER TERMINAL (Unified Console) -->
+  <app-dev-terminal />
+
+  <!-- AI News Ticker (Sticky Top) -->
+  <div class="sticky top-0 z-[60] shadow-2xl">
+      <app-ticker />
+  </div>
+
+  <!-- Industrial Header (Sticky below ticker) -->
+  <header class="bg-zinc-900 border-b-4 border-zinc-800 sticky top-10 z-50 shadow-xl transition-colors duration-500"
+          [class.border-red-600]="theme.activeTheme() === 'HEAT_WAVE'"
+          [class.bg-red-900]="theme.activeTheme() === 'HEAT_WAVE'"
+          [class.border-blue-400]="theme.activeTheme() === 'FROST'">
+    <div class="max-w-[1600px] mx-auto p-4 flex flex-col md:flex-row justify-between items-center gap-4">
+        
+        <div class="flex items-center gap-4">
+            <div class="bg-emerald-600 w-12 h-12 flex items-center justify-center font-black text-2xl text-black rounded-sm border-2 border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
+                 (click)="sound.init()" role="button" title="Click to Initialize Audio Systems">
+                BB
+            </div>
+            <div>
+                <h1 class="text-2xl font-black font-industrial uppercase tracking-tighter text-zinc-100 shadow-black drop-shadow-lg">
+                    @if(theme.activeTheme() === 'HEAT_WAVE') {
+                        <span class="text-red-500 animate-pulse">CRITICAL BREACH // HEAT WAVE</span>
+                    } @else if(theme.activeTheme() === 'FROST') {
+                        <span class="text-cyan-200">FROST MODE ENGAGED</span>
+                    } @else {
+                        Bunker Boys Automation
+                    }
+                </h1>
+                <div class="flex items-center gap-4 text-xs font-mono-ind text-zinc-500">
+                    <!-- SYSTEM HEARTBEAT -->
+                    <span class="flex items-center gap-1 transition-all">
+                        <span [class]="'w-2 h-2 rounded-full ' + (facility.workerResponding() ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981]' : 'bg-red-500 shadow-none')"></span>
+                        <span [class]="facility.workerResponding() ? 'text-zinc-300' : 'text-red-500 font-bold'">
+                            {{ facility.workerResponding() ? 'SYSTEM ONLINE' : 'CONNECTION LOST' }}
+                        </span>
+                    </span>
+                    <span>|</span>
+                    <span>CLOCK: {{ formatTime(facility.timeOfDayMin()) }}</span>
+                    <span>|</span>
+                    @if(facility.simMode() === 'FALLBACK') {
+                        <span class="text-amber-500 font-bold animate-pulse">
+                            ⚠️ SIM: FALLBACK MODE
+                        </span>
+                    } @else {
+                        <span class="text-zinc-600">SIM: WORKER MODE</span>
+                    }
+                    <span>|</span>
+                    @if (aiService.aiStatus() === 'ONLINE') {
+                        <span [class]="aiService.activeProvider() === 'OLLAMA' ? 'text-emerald-400' : 'text-indigo-400'">
+                            AI BRAIN: [{{ aiService.activeProvider() }}]
+                        </span>
+                    }
+                    @if (aiService.aiStatus() === 'OFFLINE') {
+                        <span class="text-red-500 animate-pulse font-bold">
+                            AI BRAIN: [OFFLINE]
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 w-full md:w-auto">
+             <!-- Master Pump -->
+             <button 
+                (click)="facility.togglePump()"
+                [disabled]="facility.isPumpInterlocked()"
+                [class]="facility.mainPumpActive() 
+                    ? 'bg-emerald-600 text-black border-emerald-400 shadow-[0_0_10px_#10b981]' 
+                    : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700'"
+                class="flex-1 md:flex-none px-6 py-2 border-2 font-bold font-industrial uppercase tracking-wider text-sm transition-all rounded-sm">
+                MAIN PUMP
+             </button>
+
+             <!-- Master Bypass -->
+             <button 
+                (click)="facility.toggleBypass()"
+                [class]="facility.bypassActive() 
+                    ? 'bg-red-600 text-white border-red-400 animate-pulse shadow-[0_0_10px_#ef4444]' 
+                    : 'bg-zinc-800 text-zinc-400 border-zinc-600 hover:bg-zinc-700'"
+                class="flex-1 md:flex-none px-6 py-2 border-2 font-bold font-industrial uppercase tracking-wider text-sm transition-all rounded-sm">
+                {{ facility.bypassActive() ? 'BYPASS ACTIVE' : 'ENABLE BYPASS' }}
+             </button>
+        </div>
+    </div>
+  </header>
+
+  <!-- Alerts -->
+  @if (facility.bypassActive()) {
+    <div class="bg-red-900/90 border-b-2 border-red-500 text-white font-bold text-center py-2 font-mono-ind uppercase tracking-widest text-sm animate-pulse">
+       ⚠️ SYSTEM IN HARDWARE BYPASS MODE - AUTOMATION DISABLED ⚠️
+    </div>
+  }
+
+  <!-- Main Content Grid -->
+  <main class="max-w-[1600px] mx-auto p-4 w-full flex-grow flex flex-col gap-6 pb-80">
+      
+      <!-- Flower Rooms Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-auto lg:h-[850px]">
+        <app-room-card 
+            [room]="facility.roomA()" 
+            [vitality]="gamification.roomAVitality()"
+            [disabled]="facility.bypassActive()"
+            [isOverridden]="!!facility.sensorOverrides()['A']"
+            (toggle)="facility.toggleValve('A')"
+            (toggleLights)="facility.toggleLights('A')"
+            class="h-full" /> 
+
+        <app-room-card 
+            [room]="facility.roomB()" 
+            [vitality]="gamification.roomBVitality()"
+            [disabled]="facility.bypassActive()"
+            [isOverridden]="!!facility.sensorOverrides()['B']"
+            (toggle)="facility.toggleValve('B')"
+            (toggleLights)="facility.toggleLights('B')"
+            class="h-full" />
+      </div>
+
+      <!-- Consultant & Veg Row -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2">
+              <app-consultant [roomA]="facility.roomA()" [roomB]="facility.roomB()" />
+          </div>
+          <div class="lg:col-span-1 min-h-[400px]">
+               <app-veg-card [room]="facility.roomVeg()" />
+          </div>
+      </div>
+
+  </main>
+  
+  <!-- Real-time Debug Log -->
+  <app-debug-console />
+
+</div>
