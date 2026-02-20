@@ -6,7 +6,13 @@
 **AI Engines:** Google Gemini 2.5 Flash (Default/Cloud) + Ollama/Llama3 (Local Fallback)
 
 ---
+<h2>Screenshots</h2>
 
+<img src="bb1.png" width="600">
+<br><br>
+<img src="bb2.png" width="600">
+<br><br>
+<img src="bb3.png" width="600">
 ## 🛠️ Engineering Executive Summary
 
 ### Distributed Hardware Topology (The Reality)
