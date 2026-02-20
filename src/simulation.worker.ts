@@ -44,6 +44,10 @@ let config: SimulationConfig = {
   tickSpeedMs: 1000
 };
 
+// Time State
+let virtualTimestamp = Date.now();
+const SIM_MINUTE_MS = 60 * 1000;
+
 // Virtual Hardware Overrides
 let overrides = {
   lightsA: null as boolean | null,
@@ -119,6 +123,9 @@ self.onmessage = ({ data }) => {
     case 'TRIGGER_IRRIGATION':
       triggerIrrigation(data.payload.room, data.payload.phase);
       break;
+    case 'SET_TIME':
+      virtualTimestamp = data.payload.timestamp;
+      break;
     case 'STOP':
       clearInterval(timer);
       break;
@@ -156,6 +163,9 @@ function triggerIrrigation(roomId: 'A' | 'B', phase: 'P1' | 'P2' | 'P3') {
 
 // --- PHYSICS ENGINE ---
 function tick() {
+  // Advance Time (1 Tick = 1 Simulated Minute)
+  virtualTimestamp += SIM_MINUTE_MS;
+
   // 0. Apply Hardware Overrides (Pre-Physics)
   if (overrides.lightsA !== null) roomA.lightsOn = overrides.lightsA;
   if (overrides.lightsB !== null) roomB.lightsOn = overrides.lightsB;
@@ -248,7 +258,7 @@ function tick() {
   // 5. Post Update
   self.postMessage({
     type: 'STATE_UPDATE',
-    payload: { roomA, roomB, config, reservoirLevel }
+    payload: { roomA, roomB, config, reservoirLevel, virtualTimestamp }
   });
 }
 

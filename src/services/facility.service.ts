@@ -189,30 +189,102 @@ export class FacilityService {
 
   // --- SPOOFING / INTERCEPTION ---
   private handleStateUpdate(payload: any) {
-      let rA = payload.roomA;
-      let rB = payload.roomB;
-      const rV = payload.roomVeg;
-      
-      const allOverrides = this.sensorOverrides();
-      
-      // Apply Room A Overrides
-      if (allOverrides['A']) {
-          rA = this.applyOverrideToRoom(rA, allOverrides['A']);
+      // 1. Update Time (The Multiplexer)
+      if (payload.virtualTimestamp) {
+          this.simDate.set(payload.virtualTimestamp);
+          
+          // Derive time of day from sim date
+          const date = new Date(payload.virtualTimestamp);
+          const minutes = date.getHours() * 60 + date.getMinutes();
+          this.timeOfDayMin.set(minutes);
       }
 
-      // Apply Room B Overrides
-      if (allOverrides['B']) {
-          rB = this.applyOverrideToRoom(rB, allOverrides['B']);
-      }
-
-      this.roomA.set(rA);
-      this.roomB.set(rB);
-      this.roomVeg.set(rV);
-      this.timeOfDayMin.set(payload.timeOfDayMin);
+      // 2. Merge Room Data (Don't Overwrite!)
+      this.updateRoomFromWorker(this.roomA, payload.roomA);
+      this.updateRoomFromWorker(this.roomB, payload.roomB);
       
-      if (payload.simulatedGlobalTimestamp) {
-          this.simDate.set(payload.simulatedGlobalTimestamp);
-      }
+      // Veg room is currently fallback-only or static in this version
+      // this.roomVeg.set(rV); 
+  }
+
+  private updateRoomFromWorker(roomSignal: any, workerData: any) {
+      roomSignal.update((current: RoomState) => {
+          // Merge worker data (physics) with current data (config, strains, history)
+          // Map Worker 'pumpActive' -> App 'valveOpen'
+          const valveOpen = workerData.pumpActive || false;
+          
+          const merged = { 
+              ...current, 
+              ...workerData,
+              valveOpen 
+          };
+          
+          // Apply Overrides
+          const overrides = this.sensorOverrides()[current.id];
+          const finalState = this.applyOverrideToRoom(merged, overrides);
+
+          // History Generation (Virtual Time Based)
+          const lastHistoryTime = current.history.length > 0 ? current.history[current.history.length - 1].time : -1;
+          const currentSimTime = this.timeOfDayMin();
+          
+          // Calculate Phase for Chart Colors
+          const phaseStr = this.calculatePhase(finalState.config, currentSimTime);
+          finalState.phase = phaseStr; // Update state for UI display too
+
+          // Calculate Day of Cycle (Virtual Time)
+          if (finalState.vegStartDate) {
+              const diffMs = this.simDate() - finalState.vegStartDate;
+              const day = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
+              finalState.dayOfCycle = Math.max(1, day);
+          } else {
+              // Initialize vegStartDate if missing (reverse engineer from config day)
+              // This ensures we have an anchor point for the simulation
+              const currentDay = finalState.dayOfCycle || 1;
+              const startDate = this.simDate() - ((currentDay - 1) * 24 * 60 * 60 * 1000);
+              finalState.vegStartDate = startDate;
+          }
+
+          // Handle day rollover for history (simple check)
+          const timeDiff = Math.abs(currentSimTime - lastHistoryTime);
+          
+          if (timeDiff >= 5 || current.history.length === 0) {
+             const newPoint = {
+                 time: currentSimTime,
+                 vwc: finalState.vwc,
+                 temp: finalState.temp,
+                 rh: finalState.rh,
+                 vpd: finalState.vpd,
+                 ec: finalState.ec || 3.0,
+                 co2: finalState.co2,
+                 phase: this.mapPhaseToNumber(phaseStr),
+                 valve: valveOpen ? 1 : 0
+             };
+             
+             // Append and slice
+             const newHistory = [...current.history, newPoint].slice(-288); // Keep last 24h (5min intervals)
+             finalState.history = newHistory;
+          }
+
+          return finalState;
+      });
+  }
+
+  private calculatePhase(cfg: RoomConfig, currentMin: number): string {
+      const startM = cfg.lightsOnHour * 60;
+      const dayM = cfg.dayLength * 60;
+      const rel = (currentMin - startM + 1440) % 1440;
+      const isDay = rel < dayM;
+
+      if (!isDay) return 'NIGHT';
+
+      const p0End = cfg.p0Duration;
+      const p1End = p0End + cfg.p1Duration;
+      const p2End = dayM - cfg.p2Cutoff;
+
+      if (rel < p0End) return 'P0';
+      if (rel < p1End) return 'P1';
+      if (rel < p2End) return 'P2';
+      return 'P3';
   }
 
   setSensorOverride(roomId: string, metrics: SpoofMetrics | null) {
@@ -305,6 +377,7 @@ export class FacilityService {
               const wholeMinutes = Math.floor(this.fallbackTimeAccumulator);
               this.fallbackTimeAccumulator -= wholeMinutes;
               this.timeOfDayMin.update(t => (t + wholeMinutes) % 1440);
+              this.simDate.update(d => d + (wholeMinutes * 60000));
 
               this.updateFallbackRoom(this.roomA, wholeMinutes);
               this.updateFallbackRoom(this.roomB, wholeMinutes);

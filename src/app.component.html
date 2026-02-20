@@ -43,7 +43,9 @@
                         </span>
                     </span>
                     <span>|</span>
-                    <span>CLOCK: {{ formatTime(facility.timeOfDayMin()) }}</span>
+                    <span class="font-mono text-emerald-400 font-bold">
+                        {{ facility.simDate() | date:'yyyy-MM-dd HH:mm' }}
+                    </span>
                     <span>|</span>
                     @if(facility.simMode() === 'FALLBACK') {
                         <span class="text-amber-500 font-bold animate-pulse">
