@@ -10,12 +10,15 @@ export interface DailyRank {
     score: number;
 }
 
+import { AppModeService } from './app-mode.service';
+
 @Injectable({
   providedIn: 'root'
 })
 export class GamificationService {
   private facility = inject(FacilityService);
   private sound = inject(SoundService);
+  private appMode = inject(AppModeService);
 
   // --- TUNABLE THRESHOLDS (Signals) ---
   // VPD Targets
@@ -110,9 +113,14 @@ export class GamificationService {
       return 'F';
   }
 
+  private getStorageKey(): string {
+      return this.appMode.isSim() ? 'bunker_ranks_sim' : 'bunker_ranks_live';
+  }
+
   private loadRanks(): DailyRank[] {
       if (typeof localStorage === 'undefined') return [];
-      const data = localStorage.getItem('bunker_ranks');
+      const key = this.getStorageKey();
+      const data = localStorage.getItem(key);
       return data ? JSON.parse(data) : [];
   }
 
@@ -120,7 +128,7 @@ export class GamificationService {
       const newRank: DailyRank = { date: new Date().toISOString(), grade, score };
       this.ranks.update(r => [newRank, ...r].slice(0, 10)); // Keep last 10
       if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('bunker_ranks', JSON.stringify(this.ranks()));
+          localStorage.setItem(this.getStorageKey(), JSON.stringify(this.ranks()));
       }
   }
 }

@@ -7,6 +7,8 @@ import { LogService } from './log.service';
 import { ChaosService } from './chaos.service';
 import { RoomState, RoomConfig, AiAction, SensorData, AiPersona, StressTestReport, StrainProfile, HvacState } from '../models';
 
+import { AppModeService } from './app-mode.service';
+
 // --- IMMUTABLE HARDWARE MAP ---
 const HA_ENTITY_MAP: Record<string, Record<string, string>> = {
   'A': {
@@ -38,6 +40,7 @@ export class FacilityService {
   private strainService = inject(StrainService);
   private logService = inject(LogService);
   private chaosService = inject(ChaosService);
+  private appMode = inject(AppModeService);
   private worker?: Worker;
 
   // Simulation Control
@@ -482,7 +485,6 @@ export class FacilityService {
         case 'P1': return 2;
         case 'P2': return 3;
         case 'P3': return 4;
-        case 'P3': return 4;
         default: return 0;
     }
   }
@@ -654,9 +656,16 @@ export class FacilityService {
   }
 
   private syncToHomeAssistant(roomId: string, configKey: string, value: any) {
+      // RULE 1: THE AIR GAP
+      if (this.appMode.isSim()) {
+          this.logService.logWarning(`[AIR GAP] Blocked HA Sync: ${configKey} -> ${value} (SIM_MODE ACTIVE)`);
+          return;
+      }
+
       const entityId = HA_ENTITY_MAP[roomId]?.[configKey];
       if (!entityId) return;
       this.logService.logAction(`[HARDWARE SYNC] POST /api/services/number/set_value -> ${entityId}: ${value}`);
+      // Actual HTTP call would go here if we had the endpoint configured
   }
 
   toggleValve(roomId: string) {

@@ -5,19 +5,20 @@ import { FacilityService } from './services/facility.service';
 import { ThemeService } from './services/theme.service';
 import { SoundService } from './services/sound.service';
 import { GamificationService } from './services/gamification.service';
+import { AppModeService } from './services/app-mode.service';
 import { RoomCardComponent } from './components/room-card.component';
 import { VegCardComponent } from './components/veg-card.component';
 import { ConsultantComponent } from './components/consultant.component';
 import { TickerComponent } from './components/ticker.component';
-import { SimulationControlsComponent } from './components/simulation-controls.component';
 import { DebugConsoleComponent } from './components/debug-console.component';
-import { DevTerminalComponent } from './components/dev-terminal.component'; // NEW
 import { AiConsultantService } from './services/ai-consultant.service';
+
+import { SimulationControlPanelComponent } from './components/simulation-control-panel.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RoomCardComponent, VegCardComponent, ConsultantComponent, TickerComponent, SimulationControlsComponent, DebugConsoleComponent, DevTerminalComponent],
+  imports: [CommonModule, RoomCardComponent, VegCardComponent, ConsultantComponent, TickerComponent, DebugConsoleComponent, SimulationControlPanelComponent],
   templateUrl: './app.component.html',
 })
 export class AppComponent {
@@ -26,6 +27,7 @@ export class AppComponent {
   theme = inject(ThemeService);
   sound = inject(SoundService);
   gamification = inject(GamificationService);
+  appMode = inject(AppModeService);
 
   formatTime(minutes: number): string {
     const h = Math.floor(minutes / 60);

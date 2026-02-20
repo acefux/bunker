@@ -6,6 +6,8 @@ import { RoomState, Milestone, StrainProfile } from '../models';
 import { FacilityService } from '../services/facility.service';
 import { GamificationService } from '../services/gamification.service';
 import { SoundService } from '../services/sound.service';
+import { AppModeService } from '../services/app-mode.service';
+import { SimulationService } from '../services/simulation.service';
 import { HistoryChartComponent } from './history-chart.component';
 import { CalendarWidgetComponent } from './calendar-widget.component';
 import { StrainService } from '../services/strain.service';
@@ -21,22 +23,22 @@ import { StrainService } from '../services/strain.service';
       <div [class]="statusColor() + ' h-2 w-full absolute top-0 left-0 z-10'"></div>
       
       <!-- SIGNAL INJECTION WARNING OVERLAY -->
-      @if (isOverridden()) {
-        <div class="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-green-900/90 text-green-400 text-[10px] font-black font-mono px-3 py-1 rounded-b border border-green-500 animate-pulse uppercase tracking-widest shadow-lg">
-           ⚠️ SIGNAL INJECTION ACTIVE
+      @if (isOverridden() || appMode.isSim()) {
+        <div class="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-amber-900/90 text-amber-400 text-[10px] font-black font-mono px-3 py-1 rounded-b border border-amber-500 animate-pulse uppercase tracking-widest shadow-lg">
+           {{ appMode.isSim() ? '⚠ SIMULATION DATA' : '⚠️ SIGNAL INJECTION ACTIVE' }}
         </div>
       }
 
       <!-- Industrial Header -->
       <div class="p-4 bg-zinc-900 border-b-2 border-zinc-800 flex justify-between items-start mt-1 shrink-0">
         <div class="flex items-center gap-3">
-            <div [class]="'w-3 h-3 rounded-full ' + (room().valveOpen ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981]' : 'bg-zinc-700')"></div>
+            <div [class]="'w-3 h-3 rounded-full ' + (displayRoom().valveOpen ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_#10b981]' : 'bg-zinc-700')"></div>
             <div>
-                <h2 class="text-2xl font-black text-zinc-100 font-industrial tracking-tighter uppercase leading-none">{{ room().name }}</h2>
+                <h2 class="text-2xl font-black text-zinc-100 font-industrial tracking-tighter uppercase leading-none">{{ displayRoom().name }}</h2>
                 <div class="flex gap-2 text-[10px] font-mono-ind text-zinc-500 mt-1 items-center">
-                    <span>ID: {{ room().id }}</span>
+                    <span>ID: {{ displayRoom().id }}</span>
                     <span>|</span>
-                    <span [class]="room().isDay ? 'text-amber-400' : 'text-indigo-400'">{{ room().isDay ? 'DAY MODE' : 'NIGHT MODE' }}</span>
+                    <span [class]="displayRoom().isDay ? 'text-amber-400' : 'text-indigo-400'">{{ displayRoom().isDay ? 'DAY MODE' : 'NIGHT MODE' }}</span>
                     <span>|</span>
                     <span class="flex items-center gap-1">
                        <span class="w-1.5 h-1.5 bg-green-500 rounded-full animate-ping"></span>
@@ -71,7 +73,7 @@ import { StrainService } from '../services/strain.service';
             <div>
                 <span class="text-[9px] font-bold text-zinc-500 uppercase block">Lifecycle Status</span>
                 <span class="text-xs font-mono-ind text-zinc-300">
-                    {{ room().currentLifecyclePhase }} | DAY {{ room().dayOfCycle }}
+                    {{ displayRoom().currentLifecyclePhase }} | DAY {{ displayRoom().dayOfCycle }}
                 </span>
             </div>
             
@@ -106,9 +108,9 @@ import { StrainService } from '../services/strain.service';
 
          <app-calendar-widget 
             [totalDaysAlive]="totalDaysAlive()" 
-            [phase]="room().currentLifecyclePhase"
-            [strains]="room().strains"
-            [activeMilestones]="room().activeMilestones" />
+            [phase]="displayRoom().currentLifecyclePhase"
+            [strains]="displayRoom().strains"
+            [activeMilestones]="displayRoom().activeMilestones" />
       </div>
 
       <!-- Tab Navigation -->
@@ -130,22 +132,22 @@ import { StrainService } from '../services/strain.service';
                 <!-- Aggregated VWC -->
                 <div class="col-span-2 bg-zinc-900/50 border border-zinc-800 p-4 rounded-sm flex justify-between items-center relative overflow-hidden">
                     <div class="absolute right-2 top-2 text-[10px] text-zinc-600 font-mono-ind text-right">
-                        {{ room().sensors.length }} SENSORS ACTIVE<br>
-                        @if (room().sensorStatus === 'DRIFTING') {
+                        {{ displayRoom().sensors.length }} SENSORS ACTIVE<br>
+                        @if (displayRoom().sensorStatus === 'DRIFTING') {
                             <span class="text-amber-500 font-bold animate-pulse">NOISY SIGNAL</span>
                         }
                     </div>
                     <div>
                         <span class="text-xs font-mono-ind text-zinc-500 uppercase block">Substrate VWC (Avg)</span>
-                        @if (room().sensorStatus === 'ERROR') {
+                        @if (displayRoom().sensorStatus === 'ERROR') {
                             <span class="text-4xl font-black font-industrial text-red-500">ERROR</span>
                         } @else {
-                            <span class="text-4xl font-black font-industrial text-cyan-400">{{ room().vwc }}<span class="text-lg text-zinc-600">%</span></span>
+                            <span class="text-4xl font-black font-industrial text-cyan-400">{{ displayRoom().vwc }}<span class="text-lg text-zinc-600">%</span></span>
                         }
                     </div>
                     <div class="text-right">
                         <span class="text-xs font-mono-ind text-zinc-500 block">SHOTS FIRED TODAY</span>
-                         <span class="text-xl font-bold text-zinc-300">{{ room().shotsFiredToday }} / {{ room().config.p1Shots }}</span>
+                         <span class="text-xl font-bold text-zinc-300">{{ displayRoom().shotsFiredToday }} / {{ displayRoom().config.p1Shots }}</span>
                     </div>
                 </div>
 
@@ -161,10 +163,10 @@ import { StrainService } from '../services/strain.service';
                         <div>
                             <span class="text-[10px] text-zinc-500 font-mono-ind uppercase block tracking-wider">Climate Control System</span>
                             <div class="flex items-center gap-2">
-                                <span class="text-lg font-black text-zinc-200 font-mono-ind tracking-tighter uppercase">{{ room().hvac.diagnostic }}</span>
-                                @if(room().hvac.mode === 'LOCKED_OUT') {
+                                <span class="text-lg font-black text-zinc-200 font-mono-ind tracking-tighter uppercase">{{ displayRoom().hvac.diagnostic }}</span>
+                                @if(displayRoom().hvac.mode === 'LOCKED_OUT') {
                                     <span class="px-1.5 py-0.5 bg-red-900/50 border border-red-500 text-[9px] text-red-200 rounded font-bold animate-pulse">
-                                        {{ room().hvac.lockoutRemainingMin }}m WAIT
+                                        {{ displayRoom().hvac.lockoutRemainingMin }}m WAIT
                                     </span>
                                 }
                             </div>
@@ -173,49 +175,55 @@ import { StrainService } from '../services/strain.service';
 
                     <div class="flex flex-col gap-1 items-end relative z-10">
                          <div class="flex gap-1">
-                            <span [class]="relayBadgeClass(room().hvac.coolRelay, 'cool')">AC COMPRESSOR</span>
-                            <span [class]="relayBadgeClass(room().hvac.heatRelay, 'heat')">HEATER BANK</span>
+                            <span [class]="relayBadgeClass(displayRoom().hvac.coolRelay, 'cool')">AC COMPRESSOR</span>
+                            <span [class]="relayBadgeClass(displayRoom().hvac.heatRelay, 'heat')">HEATER BANK</span>
                         </div>
                         <span class="text-[9px] text-zinc-600 font-mono-ind uppercase mt-1">
-                            Last Cycle: {{ formatTime(room().hvac.lastCycleOffTimeMin) }}
+                            Last Cycle: {{ formatTime(displayRoom().hvac.lastCycleOffTimeMin) }}
                         </span>
+                        <!-- NEW: Damper Position (Sim Mode Only) -->
+                         @if (appMode.isSim()) {
+                            <span class="text-[10px] text-amber-500 font-mono-ind uppercase mt-1 font-bold animate-pulse">
+                                DAMPER POS: {{ getSimDamperPos() }}%
+                            </span>
+                         }
                     </div>
                 </div>
 
                 <!-- Environmental Grid -->
                 <div class="bg-zinc-900/50 border border-zinc-800 p-2 rounded-sm">
                     <span class="text-[10px] font-mono-ind text-zinc-500 uppercase block">Ambient Temp</span>
-                     @if (room().sensorStatus === 'ERROR') {
+                     @if (displayRoom().sensorStatus === 'ERROR') {
                         <span class="text-xl font-bold text-red-500">ERR</span>
                      } @else {
-                        <span class="text-xl font-bold text-zinc-200">{{ room().temp }}°F</span>
+                        <span class="text-xl font-bold text-zinc-200">{{ displayRoom().temp }}°F</span>
                      }
                 </div>
                 <div class="bg-zinc-900/50 border border-zinc-800 p-2 rounded-sm">
                     <span class="text-[10px] font-mono-ind text-zinc-500 uppercase block">Canopy Temp</span>
-                     @if (room().sensorStatus === 'ERROR') {
+                     @if (displayRoom().sensorStatus === 'ERROR') {
                         <span class="text-xl font-bold text-red-500">ERR</span>
                      } @else {
-                        <span class="text-xl font-bold text-orange-300">{{ room().canopyTemp }}°F</span>
+                        <span class="text-xl font-bold text-orange-300">{{ displayRoom().canopyTemp }}°F</span>
                      }
                 </div>
                 <div class="bg-zinc-900/50 border border-zinc-800 p-2 rounded-sm">
                     <span class="text-[10px] font-mono-ind text-zinc-500 uppercase block">RH / VPD</span>
-                     @if (room().sensorStatus === 'ERROR') {
+                     @if (displayRoom().sensorStatus === 'ERROR') {
                         <span class="text-xl font-bold text-red-500">ERR</span>
                      } @else {
                         <div class="flex items-baseline gap-2">
-                            <span class="text-xl font-bold text-zinc-200">{{ room().rh }}%</span>
-                            <span class="text-xs font-bold text-emerald-400">{{ room().vpd }} kPa</span>
+                            <span class="text-xl font-bold text-zinc-200">{{ displayRoom().rh }}%</span>
+                            <span class="text-xs font-bold text-emerald-400">{{ displayRoom().vpd }} kPa</span>
                         </div>
                      }
                 </div>
                 <div class="bg-zinc-900/50 border border-zinc-800 p-2 rounded-sm">
                     <span class="text-[10px] font-mono-ind text-zinc-500 uppercase block">CO2 (PPM)</span>
-                    @if (room().sensorStatus === 'ERROR') {
+                    @if (displayRoom().sensorStatus === 'ERROR') {
                         <span class="text-xl font-bold text-red-500">ERR</span>
                      } @else {
-                        <span class="text-xl font-bold text-zinc-200">{{ room().co2 }}</span>
+                        <span class="text-xl font-bold text-zinc-200">{{ displayRoom().co2 }}</span>
                      }
                 </div>
                 
@@ -223,7 +231,7 @@ import { StrainService } from '../services/strain.service';
                 <div class="col-span-2 bg-zinc-900/50 border border-zinc-800 p-2 rounded-sm flex items-center justify-between mb-4">
                      <span class="text-[10px] font-mono-ind text-zinc-500 uppercase font-bold">Next Irrigation Event</span>
                      <div class="text-lg font-black text-zinc-200 font-mono-ind">
-                        T-MINUS {{ room().nextShotMin }} <span class="text-[10px] font-normal text-zinc-500">MIN</span>
+                        T-MINUS {{ displayRoom().nextShotMin }} <span class="text-[10px] font-normal text-zinc-500">MIN</span>
                      </div>
                 </div>
             </div>
@@ -233,10 +241,10 @@ import { StrainService } from '../services/strain.service';
         @if (activeTab() === 'charts') {
              <div class="space-y-4 animate-in fade-in duration-200 h-full flex flex-col">
                 <div class="flex-1 min-h-[250px] bg-zinc-900/50 border border-zinc-800 p-2 rounded-sm">
-                    <app-history-chart [data]="room().history" type="irrigation" />
+                    <app-history-chart [data]="displayRoom().history" type="irrigation" />
                 </div>
                 <div class="flex-1 min-h-[250px] bg-zinc-900/50 border border-zinc-800 p-2 rounded-sm">
-                    <app-history-chart [data]="room().history" type="climate" />
+                    <app-history-chart [data]="displayRoom().history" type="climate" />
                 </div>
             </div>
         }
@@ -250,7 +258,7 @@ import { StrainService } from '../services/strain.service';
                 </div>
                 
                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
-                    @for (s of room().strains; track s.id) {
+                    @for (s of displayRoom().strains; track s.id) {
                         <div (click)="loadStrainForEdit($index)"
                                 [class]="'p-3 rounded border text-left transition-all relative group cursor-pointer ' + (selectedStrainIndex() === $index ? 'bg-indigo-900/20 border-indigo-500' : 'bg-zinc-900 border-zinc-800 hover:border-zinc-600')">
                             <div class="text-[10px] font-bold text-zinc-300 truncate pr-6">{{ s.name }}</div>
@@ -264,7 +272,7 @@ import { StrainService } from '../services/strain.service';
                             </button>
                         </div>
                     }
-                    @if (room().strains.length === 0) {
+                    @if (displayRoom().strains.length === 0) {
                         <div class="col-span-2 p-4 text-center border border-zinc-800 border-dashed rounded text-zinc-600 text-[10px]">
                             Room is currently empty (Fallow).<br>Add a plant to begin simulation.
                         </div>
@@ -388,23 +396,23 @@ import { StrainService } from '../services/strain.service';
                 <div class="border-l-2 border-emerald-600 pl-3">
                     <h3 class="text-sm font-bold text-emerald-500 uppercase mb-2">Athena Phase Logic</h3>
                     <div class="grid grid-cols-2 gap-3">
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">P0 Dormancy (Min)</label><input type="number" [ngModel]="room().config.p0Duration" (ngModelChange)="updateConfig('p0Duration', $event)" class="ind-input"></div>
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Shot Size (Sec)</label><input type="number" [ngModel]="room().config.shotDuration" (ngModelChange)="updateConfig('shotDuration', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">P0 Dormancy (Min)</label><input type="number" [ngModel]="displayRoom().config.p0Duration" (ngModelChange)="updateConfig('p0Duration', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Shot Size (Sec)</label><input type="number" [ngModel]="displayRoom().config.shotDuration" (ngModelChange)="updateConfig('shotDuration', $event)" class="ind-input"></div>
                     </div>
                 </div>
                 <div class="border-l-2 border-cyan-600 pl-3">
                     <h3 class="text-sm font-bold text-cyan-500 uppercase mb-2">P1 (Ramp) Config</h3>
                      <div class="grid grid-cols-2 gap-3">
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Duration (Min)</label><input type="number" [ngModel]="room().config.p1Duration" (ngModelChange)="updateConfig('p1Duration', $event)" class="ind-input"></div>
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Interval (Min)</label><input type="number" [ngModel]="room().config.p1Interval" (ngModelChange)="updateConfig('p1Interval', $event)" class="ind-input"></div>
-                         <div class="form-group col-span-2"><label class="text-[10px] text-zinc-500 uppercase">P1 Shots (Count)</label><input type="number" [ngModel]="room().config.p1Shots" (ngModelChange)="updateConfig('p1Shots', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Duration (Min)</label><input type="number" [ngModel]="displayRoom().config.p1Duration" (ngModelChange)="updateConfig('p1Duration', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Interval (Min)</label><input type="number" [ngModel]="displayRoom().config.p1Interval" (ngModelChange)="updateConfig('p1Interval', $event)" class="ind-input"></div>
+                         <div class="form-group col-span-2"><label class="text-[10px] text-zinc-500 uppercase">P1 Shots (Count)</label><input type="number" [ngModel]="displayRoom().config.p1Shots" (ngModelChange)="updateConfig('p1Shots', $event)" class="ind-input"></div>
                     </div>
                 </div>
                 <div class="border-l-2 border-amber-600 pl-3">
                     <h3 class="text-sm font-bold text-amber-500 uppercase mb-2">P2 (Maint) Config</h3>
                      <div class="grid grid-cols-2 gap-3">
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Interval (Min)</label><input type="number" [ngModel]="room().config.p2Interval" (ngModelChange)="updateConfig('p2Interval', $event)" class="ind-input"></div>
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Cutoff (Min)</label><input type="number" [ngModel]="room().config.p2Cutoff" (ngModelChange)="updateConfig('p2Cutoff', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Interval (Min)</label><input type="number" [ngModel]="displayRoom().config.p2Interval" (ngModelChange)="updateConfig('p2Interval', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Cutoff (Min)</label><input type="number" [ngModel]="displayRoom().config.p2Cutoff" (ngModelChange)="updateConfig('p2Cutoff', $event)" class="ind-input"></div>
                     </div>
                 </div>
             </div>
@@ -420,8 +428,8 @@ import { StrainService } from '../services/strain.service';
                     <h3 class="text-xs font-bold text-zinc-400 uppercase mb-3 border-b border-zinc-800 pb-1">HVAC Sync Status</h3>
                     <p class="text-[10px] text-zinc-500">HVAC shift schedule is locked to Photoperiod (Lighting).</p>
                     <div class="flex justify-between mt-2">
-                        <span class="text-[10px] text-amber-500 font-bold">DAY: {{ formatTime(room().config.lightsOnHour * 60) }}</span>
-                        <span class="text-[10px] text-indigo-400 font-bold">NIGHT: {{ formatTime((room().config.lightsOnHour + room().config.dayLength) * 60) }}</span>
+                        <span class="text-[10px] text-amber-500 font-bold">DAY: {{ formatTime(displayRoom().config.lightsOnHour * 60) }}</span>
+                        <span class="text-[10px] text-indigo-400 font-bold">NIGHT: {{ formatTime((displayRoom().config.lightsOnHour + displayRoom().config.dayLength) * 60) }}</span>
                     </div>
                 </div>
 
@@ -429,18 +437,18 @@ import { StrainService } from '../services/strain.service';
                     <span class="material-icons absolute top-2 right-2 text-amber-500 text-sm">wb_sunny</span>
                     <h3 class="text-xs font-bold text-zinc-400 uppercase mb-3 border-b border-zinc-800 pb-1">Day Setpoints</h3>
                     <div class="grid grid-cols-2 gap-3">
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Temp Low (°F)</label><input type="number" [ngModel]="room().config.dayTempLow" (ngModelChange)="updateConfig('dayTempLow', $event)" class="ind-input"></div>
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Temp High (°F)</label><input type="number" [ngModel]="room().config.dayTempHigh" (ngModelChange)="updateConfig('dayTempHigh', $event)" class="ind-input"></div>
-                         <div class="form-group col-span-2"><label class="text-[10px] text-zinc-500 uppercase">Target RH (%)</label><input type="number" [ngModel]="room().config.dayRhTarget" (ngModelChange)="updateConfig('dayRhTarget', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Temp Low (°F)</label><input type="number" [ngModel]="displayRoom().config.dayTempLow" (ngModelChange)="updateConfig('dayTempLow', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Temp High (°F)</label><input type="number" [ngModel]="displayRoom().config.dayTempHigh" (ngModelChange)="updateConfig('dayTempHigh', $event)" class="ind-input"></div>
+                         <div class="form-group col-span-2"><label class="text-[10px] text-zinc-500 uppercase">Target RH (%)</label><input type="number" [ngModel]="displayRoom().config.dayRhTarget" (ngModelChange)="updateConfig('dayRhTarget', $event)" class="ind-input"></div>
                     </div>
                 </div>
                 <div class="bg-zinc-900 border border-zinc-800 p-3 rounded-sm relative">
                     <span class="material-icons absolute top-2 right-2 text-indigo-500 text-sm">nights_stay</span>
                     <h3 class="text-xs font-bold text-zinc-400 uppercase mb-3 border-b border-zinc-800 pb-1">Night Setpoints</h3>
                     <div class="grid grid-cols-2 gap-3">
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Temp Low (°F)</label><input type="number" [ngModel]="room().config.nightTempLow" (ngModelChange)="updateConfig('nightTempLow', $event)" class="ind-input"></div>
-                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Temp High (°F)</label><input type="number" [ngModel]="room().config.nightTempHigh" (ngModelChange)="updateConfig('nightTempHigh', $event)" class="ind-input"></div>
-                         <div class="form-group col-span-2"><label class="text-[10px] text-zinc-500 uppercase">Target RH (%)</label><input type="number" [ngModel]="room().config.nightRhTarget" (ngModelChange)="updateConfig('nightRhTarget', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Temp Low (°F)</label><input type="number" [ngModel]="displayRoom().config.nightTempLow" (ngModelChange)="updateConfig('nightTempLow', $event)" class="ind-input"></div>
+                         <div class="form-group"><label class="text-[10px] text-zinc-500 uppercase">Temp High (°F)</label><input type="number" [ngModel]="displayRoom().config.nightTempHigh" (ngModelChange)="updateConfig('nightTempHigh', $event)" class="ind-input"></div>
+                         <div class="form-group col-span-2"><label class="text-[10px] text-zinc-500 uppercase">Target RH (%)</label><input type="number" [ngModel]="displayRoom().config.nightRhTarget" (ngModelChange)="updateConfig('nightRhTarget', $event)" class="ind-input"></div>
                     </div>
                 </div>
             </div>
@@ -450,12 +458,12 @@ import { StrainService } from '../services/strain.service';
         @if (activeTab() === 'lighting') {
             <div class="space-y-4 animate-in fade-in duration-200 font-mono-ind">
                 <div class="bg-zinc-900 border border-zinc-800 p-4 rounded-sm flex flex-col items-center justify-center gap-4">
-                     <div [class]="'w-16 h-16 rounded-full border-4 flex items-center justify-center transition-all duration-500 ' + (room().lightsOn ? 'border-amber-400 bg-amber-400/20 shadow-[0_0_30px_#fbbf24]' : 'border-zinc-700 bg-zinc-800')">
-                        <span class="material-icons text-3xl" [class]="room().lightsOn ? 'text-amber-400' : 'text-zinc-600'">light_mode</span>
+                     <div [class]="'w-16 h-16 rounded-full border-4 flex items-center justify-center transition-all duration-500 ' + (displayRoom().lightsOn ? 'border-amber-400 bg-amber-400/20 shadow-[0_0_30px_#fbbf24]' : 'border-zinc-700 bg-zinc-800')">
+                        <span class="material-icons text-3xl" [class]="displayRoom().lightsOn ? 'text-amber-400' : 'text-zinc-600'">light_mode</span>
                      </div>
                      <div class="text-center">
                         <h3 class="text-lg font-bold text-zinc-200 uppercase">Main Grow Lights</h3>
-                        <span class="text-xs text-zinc-500">{{ room().lightsOn ? 'OUTPUT: ' + room().config.lightIntensity + '%' : 'OUTPUT: 0%' }}</span>
+                        <span class="text-xs text-zinc-500">{{ displayRoom().lightsOn ? 'OUTPUT: ' + displayRoom().config.lightIntensity + '%' : 'OUTPUT: 0%' }}</span>
                      </div>
                      <button (click)="toggleLights.emit()" class="w-full py-3 bg-zinc-800 border border-zinc-600 hover:bg-zinc-700 text-zinc-200 font-bold uppercase rounded-sm">Toggle Manual Override</button>
                 </div>
@@ -463,19 +471,19 @@ import { StrainService } from '../services/strain.service';
                 <div class="grid grid-cols-2 gap-3">
                      <div class="form-group">
                         <label class="text-[10px] text-zinc-500 uppercase">On Hour (24h)</label>
-                        <input type="number" [ngModel]="room().config.lightsOnHour" (ngModelChange)="updateConfig('lightsOnHour', $event)" class="ind-input">
+                        <input type="number" [ngModel]="displayRoom().config.lightsOnHour" (ngModelChange)="updateConfig('lightsOnHour', $event)" class="ind-input">
                      </div>
                      <div class="form-group">
                         <label class="text-[10px] text-zinc-500 uppercase">Duration (Hrs)</label>
-                        <input type="number" [ngModel]="room().config.dayLength" (ngModelChange)="updateConfig('dayLength', $event)" class="ind-input">
+                        <input type="number" [ngModel]="displayRoom().config.dayLength" (ngModelChange)="updateConfig('dayLength', $event)" class="ind-input">
                      </div>
                 </div>
                 
                 <!-- NEW CONTROLS -->
                 <div class="border-t border-zinc-800 pt-3">
-                    <label class="text-[10px] text-zinc-500 uppercase block mb-1">Light Intensity ({{ room().config.lightIntensity }}%)</label>
+                    <label class="text-[10px] text-zinc-500 uppercase block mb-1">Light Intensity ({{ displayRoom().config.lightIntensity }}%)</label>
                     <input type="range" min="0" max="100" step="10" 
-                           [ngModel]="room().config.lightIntensity" 
+                           [ngModel]="displayRoom().config.lightIntensity" 
                            (ngModelChange)="updateConfig('lightIntensity', $event)" 
                            class="w-full h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-amber-500">
                 </div>
@@ -483,7 +491,7 @@ import { StrainService } from '../services/strain.service';
                 <div>
                     <label class="text-[10px] text-zinc-500 uppercase block mb-1">Ramp Up/Down (Minutes)</label>
                     <input type="number" 
-                           [ngModel]="room().config.lightRampDuration" 
+                           [ngModel]="displayRoom().config.lightRampDuration" 
                            (ngModelChange)="updateConfig('lightRampDuration', $event)" 
                            class="ind-input">
                 </div>
@@ -495,7 +503,7 @@ import { StrainService } from '../services/strain.service';
       <!-- Footer / Action Bar -->
       <div class="p-3 bg-zinc-900 border-t-2 border-zinc-800 flex gap-2 shrink-0">
          <button (click)="confirmToggle()" [disabled]="disabled()" [class]="valveBtnClass()">
-             {{ room().valveOpen ? 'STOP / CANCEL' : 'MANUAL SHOT (' + (room().config.shotDuration || 30) + 's)' }}
+             {{ displayRoom().valveOpen ? 'STOP / CANCEL' : 'MANUAL SHOT (' + (displayRoom().config.shotDuration || 30) + 's)' }}
          </button>
       </div>
       
@@ -541,10 +549,12 @@ export class RoomCardComponent {
   toggle = output<void>();
   toggleLights = output<void>();
   
-  private facility = inject(FacilityService);
+  facility = inject(FacilityService);
   private strainService = inject(StrainService);
   private gamification = inject(GamificationService);
   private sound = inject(SoundService);
+  appMode = inject(AppModeService);
+  private simService = inject(SimulationService);
 
   activeTab = signal<'monitor' | 'charts' | 'irrigation' | 'climate' | 'lighting' | 'genetics'>('monitor');
   selectedStrainIndex = signal<number>(0);
@@ -561,11 +571,35 @@ export class RoomCardComponent {
       flowerDays: 63
   };
 
+  // --- DATA MULTIPLEXING ---
+  displayRoom = computed(() => {
+    if (this.appMode.isSim()) {
+      // Map SimRoomState to RoomState structure for display compatibility
+      // We need to merge sim data with static config/strains from the real room state
+      // because the sim worker only sends physics data, not the full object graph.
+      const simData = this.room().id === 'A' ? this.simService.roomA() : this.simService.roomB();
+      const realData = this.room();
+      
+      return {
+        ...realData,
+        temp: simData.temp,
+        rh: simData.rh,
+        vwc: simData.vwc,
+        co2: simData.co2,
+        vpd: simData.vpd,
+        lightsOn: simData.lightsOn,
+        // Inject Damper Pos into HVAC diagnostic or a new field if we updated the interface
+        // For now, let's just use the real config/strains
+      };
+    }
+    return this.room();
+  });
+
   rank = computed(() => this.gamification.getRankForScore(this.vitality()));
 
   // --- NEW: Computed for Total Days Alive ---
   totalDaysAlive = computed(() => {
-    const room = this.room();
+    const room = this.displayRoom();
     if (!room.vegStartDate) return 0;
     const now = this.facility.simDate();
     // Use same unified math as worker
@@ -573,13 +607,13 @@ export class RoomCardComponent {
   });
 
   availableStrainsToAdd = computed(() => {
-    const currentStrainIds = this.room().strains.map(s => s.id);
+    const currentStrainIds = this.displayRoom().strains.map(s => s.id);
     return this.allStrains.filter(s => !currentStrainIds.includes(s.id));
   });
 
   constructor() {
      effect(() => {
-        const room = this.room();
+        const room = this.displayRoom();
         const idx = this.selectedStrainIndex();
         if (room.strains.length > 0 && idx >= room.strains.length) {
             this.selectedStrainIndex.set(0);
@@ -594,7 +628,7 @@ export class RoomCardComponent {
 
   // --- COMPUTED VISUALS ---
   statusColor = computed(() => {
-    switch(this.room().phase) {
+    switch(this.displayRoom().phase) {
       case 'P1': return 'bg-emerald-500';
       case 'P2': return 'bg-cyan-500';
       case 'P3': return 'bg-amber-500';
@@ -604,7 +638,7 @@ export class RoomCardComponent {
   });
 
   statusTextColor = computed(() => {
-    switch(this.room().phase) {
+    switch(this.displayRoom().phase) {
       case 'P1': return 'text-emerald-500 border-emerald-900';
       case 'P2': return 'text-cyan-500 border-cyan-900';
       case 'P3': return 'text-amber-500 border-amber-900';
@@ -632,7 +666,7 @@ export class RoomCardComponent {
 
   // HVAC Visuals
   hvacStatusColor = computed(() => {
-    const hvac = this.room().hvac;
+    const hvac = this.displayRoom().hvac;
     if (hvac.mode === 'LOCKED_OUT') return 'bg-red-900/50 text-red-500 border-red-600 animate-pulse';
     if (hvac.coolRelay) return 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_15px_#22d3ee]';
     if (hvac.heatRelay) return 'bg-orange-500 text-black border-orange-400 shadow-[0_0_15px_#f97316]';
@@ -640,7 +674,7 @@ export class RoomCardComponent {
   });
 
   hvacBgColor = computed(() => {
-    const hvac = this.room().hvac;
+    const hvac = this.displayRoom().hvac;
     if (hvac.mode === 'LOCKED_OUT') return 'bg-red-900';
     if (hvac.coolRelay) return 'bg-cyan-600';
     if (hvac.heatRelay) return 'bg-orange-600';
@@ -648,7 +682,7 @@ export class RoomCardComponent {
   });
 
   hvacStatusIcon = computed(() => {
-    const hvac = this.room().hvac;
+    const hvac = this.displayRoom().hvac;
     if (hvac.mode === 'LOCKED_OUT') return 'lock_clock';
     if (hvac.coolRelay) return 'ac_unit';
     if (hvac.heatRelay) return 'local_fire_department';
@@ -657,15 +691,15 @@ export class RoomCardComponent {
 
   setActiveTab(tab: any) {
       this.activeTab.set(tab);
-      if (tab === 'genetics' && this.room().strains.length > 0) {
+      if (tab === 'genetics' && this.displayRoom().strains.length > 0) {
           this.loadStrainForEdit(this.selectedStrainIndex());
       }
   }
 
   loadStrainForEdit(index: number) {
-      if (index < 0 || index >= this.room().strains.length) return;
+      if (index < 0 || index >= this.displayRoom().strains.length) return;
       this.selectedStrainIndex.set(index);
-      const strain = this.room().strains[index];
+      const strain = this.displayRoom().strains[index];
       if (strain) {
         this.editingStrain.set(JSON.parse(JSON.stringify(strain)));
       }
@@ -674,7 +708,7 @@ export class RoomCardComponent {
   saveStrain() {
       const strain = this.editingStrain();
       if(!strain) return;
-      this.facility.updateRoomStrain(this.room().id, this.selectedStrainIndex(), strain);
+      this.facility.updateRoomStrain(this.displayRoom().id, this.selectedStrainIndex(), strain);
   }
 
   discardChanges() {
@@ -685,11 +719,11 @@ export class RoomCardComponent {
      const strain = this.editingStrain();
      if (!strain) return;
      
-     const currentPhase = this.room().currentLifecyclePhase;
+     const currentPhase = this.displayRoom().currentLifecyclePhase;
      const safePhase = currentPhase === 'IDLE' ? 'VEG' : currentPhase as 'VEG' | 'FLOWER';
 
      const newM: Milestone = { 
-         day: this.room().dayOfCycle + 1, 
+         day: this.displayRoom().dayOfCycle + 1, 
          phase: safePhase,
          title: 'New SOP Event', 
          description: 'Action item', 
@@ -708,7 +742,7 @@ export class RoomCardComponent {
   }
 
   addStrain(strainId: string) {
-    this.facility.addStrain(this.room().id, strainId);
+    this.facility.addStrain(this.displayRoom().id, strainId);
     this.showAddStrainUI.set(false);
   }
 
@@ -724,20 +758,20 @@ export class RoomCardComponent {
           feedSensitivity: 'MED',
           milestones: [] 
       };
-      this.facility.addCustomStrain(this.room().id, strain);
+      this.facility.addCustomStrain(this.displayRoom().id, strain);
       this.newStrain = { name: '', type: 'HYBRID', flowerDays: 63, vegDays: 14 };
       this.showAddStrainUI.set(false);
   }
 
   requestRemoveStrain(index: number) {
       if (confirm('Are you sure you want to remove this plant profile from the room?')) {
-          this.facility.removeStrain(this.room().id, index);
+          this.facility.removeStrain(this.displayRoom().id, index);
       }
   }
 
   getStartDate() {
       // Fix: Strictly return vegStartDate as per instruction
-      return this.room().vegStartDate;
+      return this.displayRoom().vegStartDate;
   }
 
   // --- NEW: Calculate Finish Date based on longest strain ---
@@ -745,7 +779,7 @@ export class RoomCardComponent {
       const start = this.getStartDate();
       if (!start) return null;
       
-      const strains = this.room().strains;
+      const strains = this.displayRoom().strains;
       if (strains.length === 0) return null;
 
       // Find the longest cycle duration (Veg + Flower)
@@ -764,7 +798,7 @@ export class RoomCardComponent {
       const day = parseInt(parts[2], 10);
       
       const newDate = new Date(year, month, day);
-      this.facility.setStartDate(this.room().id, newDate.getTime());
+      this.facility.setStartDate(this.displayRoom().id, newDate.getTime());
   }
 
   tabClass(tab: string) {
@@ -786,13 +820,13 @@ export class RoomCardComponent {
   valveBtnClass = computed(() => {
     const base = "w-full py-3 font-bold font-industrial uppercase tracking-widest text-sm transition-all border rounded-sm ";
     if (this.disabled()) return base + "bg-zinc-800 text-zinc-600 border-zinc-700 cursor-not-allowed";
-    return this.room().valveOpen
+    return this.displayRoom().valveOpen
         ? base + "bg-red-900/20 text-red-500 border-red-900 hover:bg-red-900/40"
         : base + "bg-emerald-900/20 text-emerald-500 border-emerald-900 hover:bg-emerald-900/40";
   });
 
   updateConfig(key: string, value: any) {
-    this.facility.updateConfig(this.room().id, { [key]: parseFloat(value) });
+    this.facility.updateConfig(this.displayRoom().id, { [key]: parseFloat(value) });
   }
 
   confirmToggle() {
@@ -813,5 +847,10 @@ export class RoomCardComponent {
     const h = Math.floor(minutes / 60) % 24;
     const m = Math.floor(minutes % 60);
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  }
+
+  getSimDamperPos() {
+    const simData = this.room().id === 'A' ? this.simService.roomA() : this.simService.roomB();
+    return simData.damperPos;
   }
 }
