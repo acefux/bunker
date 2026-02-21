@@ -130,14 +130,26 @@ import { StrainService } from '../services/strain.service';
         @if (activeTab() === 'monitor') {
             <div class="grid grid-cols-2 gap-4 animate-in fade-in duration-200">
                 <!-- Aggregated VWC -->
-                <div class="col-span-2 bg-zinc-900/50 border border-zinc-800 p-4 rounded-sm flex justify-between items-center relative overflow-hidden">
-                    <div class="absolute right-2 top-2 text-[10px] text-zinc-600 font-mono-ind text-right">
+                <div class="col-span-2 bg-zinc-900/50 border border-zinc-800 p-4 rounded-sm flex justify-between items-center relative overflow-hidden group"
+                     [class.border-red-500]="displayRoom().mainPumpFailure && !displayRoom().pin18Bypass"
+                     [class.animate-pulse]="displayRoom().mainPumpFailure && !displayRoom().pin18Bypass"
+                     [class.shake]="displayRoom().mainPumpFailure && !displayRoom().pin18Bypass"
+                     title="Substrate Volumetric Water Content. Keep between 40-60%. Drops faster when hot!">
+                    
+                    @if (displayRoom().mainPumpFailure) {
+                        <div class="absolute inset-0 bg-red-900/20 z-0 pointer-events-none"></div>
+                        <div class="absolute top-0 left-0 w-full bg-red-600 text-black text-[10px] font-black text-center animate-pulse z-20">
+                            CRITICAL FAILURE: MAIN PUMP LOCKOUT
+                        </div>
+                    }
+
+                    <div class="absolute right-2 top-2 text-[10px] text-zinc-600 font-mono-ind text-right z-10">
                         {{ displayRoom().sensors.length }} SENSORS ACTIVE<br>
                         @if (displayRoom().sensorStatus === 'DRIFTING') {
                             <span class="text-amber-500 font-bold animate-pulse">NOISY SIGNAL</span>
                         }
                     </div>
-                    <div>
+                    <div class="z-10">
                         <span class="text-xs font-mono-ind text-zinc-500 uppercase block">Substrate VWC (Avg)</span>
                         @if (displayRoom().sensorStatus === 'ERROR') {
                             <span class="text-4xl font-black font-industrial text-red-500">ERROR</span>
@@ -145,9 +157,20 @@ import { StrainService } from '../services/strain.service';
                             <span class="text-4xl font-black font-industrial text-cyan-400">{{ displayRoom().vwc }}<span class="text-lg text-zinc-600">%</span></span>
                         }
                     </div>
-                    <div class="text-right">
-                        <span class="text-xs font-mono-ind text-zinc-500 block">SHOTS FIRED TODAY</span>
-                         <span class="text-xl font-bold text-zinc-300">{{ displayRoom().shotsFiredToday }} / {{ displayRoom().config.p1Shots }}</span>
+                    <div class="text-right z-10 flex flex-col items-end gap-2">
+                        <div>
+                            <span class="text-xs font-mono-ind text-zinc-500 block">SHOTS FIRED TODAY</span>
+                            <span class="text-xl font-bold text-zinc-300">{{ displayRoom().shotsFiredToday }} / {{ displayRoom().config.p1Shots }}</span>
+                        </div>
+                        
+                        <!-- PIN 18 BYPASS BUTTON (Only visible during failure) -->
+                        @if (displayRoom().mainPumpFailure) {
+                            <button (click)="togglePin18()" 
+                                    [class]="displayRoom().pin18Bypass ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-red-600 text-white border-red-400 animate-bounce'"
+                                    class="text-[9px] font-black px-2 py-1 rounded border-2 uppercase shadow-lg hover:scale-105 transition-transform">
+                                {{ displayRoom().pin18Bypass ? 'BYPASS ACTIVE (PIN 18)' : 'ENGAGE PIN 18 BYPASS' }}
+                            </button>
+                        }
                     </div>
                 </div>
 
@@ -573,25 +596,8 @@ export class RoomCardComponent {
 
   // --- DATA MULTIPLEXING ---
   displayRoom = computed(() => {
-    if (this.appMode.isSim()) {
-      // Map SimRoomState to RoomState structure for display compatibility
-      // We need to merge sim data with static config/strains from the real room state
-      // because the sim worker only sends physics data, not the full object graph.
-      const simData = this.room().id === 'A' ? this.simService.roomA() : this.simService.roomB();
-      const realData = this.room();
-      
-      return {
-        ...realData,
-        temp: simData.temp,
-        rh: simData.rh,
-        vwc: simData.vwc,
-        co2: simData.co2,
-        vpd: simData.vpd,
-        lightsOn: simData.lightsOn,
-        // Inject Damper Pos into HVAC diagnostic or a new field if we updated the interface
-        // For now, let's just use the real config/strains
-      };
-    }
+    // FacilityService now handles all merging of worker data into the main room signal.
+    // We no longer need to manually multiplex between simService and room().
     return this.room();
   });
 
@@ -769,6 +775,10 @@ export class RoomCardComponent {
       }
   }
 
+  togglePin18() {
+      this.facility.togglePin18(this.displayRoom().id);
+  }
+
   getStartDate() {
       // Fix: Strictly return vegStartDate as per instruction
       return this.displayRoom().vegStartDate;
@@ -850,7 +860,6 @@ export class RoomCardComponent {
   }
 
   getSimDamperPos() {
-    const simData = this.room().id === 'A' ? this.simService.roomA() : this.simService.roomB();
-    return simData.damperPos;
+    return this.displayRoom().damperPos;
   }
 }

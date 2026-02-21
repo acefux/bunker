@@ -151,6 +151,11 @@ export interface RoomState {
   valveOpen: boolean; 
   valveOpenSince: number | null;
   lightsOn: boolean;
+  damperPos: number; // 0-100%
+  coolingStatus: 'IDLE' | 'COOLING' | 'HEATING';
+  
+  mainPumpFailure?: boolean;
+  pin18Bypass?: boolean;
   
   hvac: HvacState;
 

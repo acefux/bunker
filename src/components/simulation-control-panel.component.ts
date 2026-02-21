@@ -5,6 +5,9 @@ import { FormsModule } from '@angular/forms';
 import { SimulationService } from '../services/simulation.service';
 import { AppModeService } from '../services/app-mode.service';
 import { AiConsultantService } from '../services/ai-consultant.service';
+import { SoundService } from '../services/sound.service';
+import { GamificationService } from '../services/gamification.service';
+import { FacilityService } from '../services/facility.service';
 
 @Component({
   selector: 'app-simulation-panel',
@@ -14,6 +17,33 @@ import { AiConsultantService } from '../services/ai-consultant.service';
     @if (appMode.isSim()) {
       <div class="fixed bottom-0 left-0 w-full bg-zinc-950 border-t-4 border-amber-500 shadow-[0_-5px_20px_rgba(245,158,11,0.3)] z-[9999] animate-in slide-in-from-bottom duration-300 flex flex-col">
         
+        <!-- MISSION OVERLAY (Floating) -->
+        @if (game.activeMission(); as mission) {
+            <div class="absolute bottom-full right-4 mb-4 bg-black/90 border border-amber-500/50 p-3 rounded shadow-lg w-64 animate-in slide-in-from-right">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-[10px] text-amber-500 font-black uppercase tracking-widest">CURRENT OBJECTIVE</span>
+                    <span class="text-[10px] text-white font-mono">{{ mission.progress }}/{{ mission.total }}</span>
+                </div>
+                <h4 class="text-xs font-bold text-white mb-1">{{ mission.title }}</h4>
+                <p class="text-[9px] text-zinc-400 leading-tight mb-2">{{ mission.description }}</p>
+                <div class="w-full h-1 bg-zinc-800 rounded overflow-hidden">
+                    <div class="h-full bg-amber-500 transition-all duration-500" [style.width.%]="(mission.progress / mission.total) * 100"></div>
+                </div>
+            </div>
+        }
+
+        <!-- COMBO METER (Floating) -->
+        @if (game.comboMultiplier() > 1.0) {
+            <div class="absolute bottom-full left-4 mb-4">
+                <div class="text-4xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-red-500 drop-shadow-[0_0_10px_rgba(245,158,11,0.8)] animate-pulse">
+                    {{ game.comboMultiplier() }}x COMBO!
+                </div>
+                <div class="text-[10px] text-amber-300 font-mono-ind text-center bg-black/50 px-2 rounded">
+                    PRECISION STREAK: {{ game.comboTimer() }}s
+                </div>
+            </div>
+        }
+
         <!-- EXPANDED PANEL (OVERRIDES) -->
         @if (expanded()) {
           <div class="bg-zinc-900/95 border-b border-zinc-800 p-4 grid grid-cols-1 md:grid-cols-4 gap-6 animate-in slide-in-from-bottom-10">
@@ -45,14 +75,14 @@ import { AiConsultantService } from '../services/ai-consultant.service';
                       <div class="text-[10px] text-zinc-500 font-bold text-center col-span-1">ROOM A</div>
                       <div class="text-[10px] text-zinc-500 font-bold text-center col-span-1">ROOM B</div>
                       
-                      <button (click)="sim.triggerIrrigation('A', 'P1')" class="sim-btn-xs">P1 (RAMP)</button>
-                      <button (click)="sim.triggerIrrigation('B', 'P1')" class="sim-btn-xs">P1 (RAMP)</button>
+                      <button (click)="triggerShot('A', 'P1')" class="sim-btn-xs">P1 (RAMP)</button>
+                      <button (click)="triggerShot('B', 'P1')" class="sim-btn-xs">P1 (RAMP)</button>
                       
-                      <button (click)="sim.triggerIrrigation('A', 'P2')" class="sim-btn-xs">P2 (MAINT)</button>
-                      <button (click)="sim.triggerIrrigation('B', 'P2')" class="sim-btn-xs">P2 (MAINT)</button>
+                      <button (click)="triggerShot('A', 'P2')" class="sim-btn-xs">P2 (MAINT)</button>
+                      <button (click)="triggerShot('B', 'P2')" class="sim-btn-xs">P2 (MAINT)</button>
                       
-                      <button (click)="sim.triggerIrrigation('A', 'P3')" class="sim-btn-xs text-red-400 border-red-900">P3 (FLUSH)</button>
-                      <button (click)="sim.triggerIrrigation('B', 'P3')" class="sim-btn-xs text-red-400 border-red-900">P3 (FLUSH)</button>
+                      <button (click)="triggerShot('A', 'P3')" class="sim-btn-xs text-red-400 border-red-900">P3 (FLUSH)</button>
+                      <button (click)="triggerShot('B', 'P3')" class="sim-btn-xs text-red-400 border-red-900">P3 (FLUSH)</button>
                   </div>
               </div>
 
@@ -71,10 +101,12 @@ import { AiConsultantService } from '../services/ai-consultant.service';
                           <div class="flex gap-1">
                               <button (click)="aiService.toggleProvider('GEMINI')" 
                                       [class]="aiService.activeProvider() === 'GEMINI' ? 'bg-amber-600 text-black' : 'bg-zinc-900 text-zinc-500'"
-                                      class="flex-1 text-[10px] font-bold py-1 border border-zinc-700 rounded">GEMINI</button>
+                                      class="flex-1 text-[10px] font-bold py-1 border border-zinc-700 rounded"
+                                      (click)="sound.playClick()">GEMINI</button>
                               <button (click)="aiService.toggleProvider('OLLAMA')" 
                                       [class]="aiService.activeProvider() === 'OLLAMA' ? 'bg-amber-600 text-black' : 'bg-zinc-900 text-zinc-500'"
-                                      class="flex-1 text-[10px] font-bold py-1 border border-zinc-700 rounded">OLLAMA</button>
+                                      class="flex-1 text-[10px] font-bold py-1 border border-zinc-700 rounded"
+                                      (click)="sound.playClick()">OLLAMA</button>
                           </div>
                       </div>
                   </div>
@@ -86,7 +118,7 @@ import { AiConsultantService } from '../services/ai-consultant.service';
         <div class="p-4 max-w-[1600px] mx-auto w-full flex flex-col md:flex-row gap-6 items-center">
           
           <!-- HEADER -->
-          <div class="flex items-center gap-4 min-w-[200px] cursor-pointer group" (click)="expanded.set(!expanded())">
+          <div class="flex items-center gap-4 min-w-[200px] cursor-pointer group" (click)="toggleExpand()">
              <div class="w-12 h-12 bg-amber-500 text-black flex items-center justify-center font-black text-2xl rounded animate-pulse group-hover:scale-110 transition-transform">
                 {{ expanded() ? '▼' : '⚠' }}
              </div>
@@ -135,14 +167,31 @@ import { AiConsultantService } from '../services/ai-consultant.service';
             <div class="control-group">
                <label>Tick Speed ({{ sim.config().tickSpeedMs }}ms)</label>
                <input type="range" [ngModel]="sim.config().tickSpeedMs" (ngModelChange)="update('tickSpeedMs', $event)" 
-                      class="sim-range" min="10" max="2000" step="10" style="direction: rtl"> <!-- Right is faster (lower ms) -->
+                      class="sim-range" min="10" max="2000" step="10"> <!-- Removed rtl to avoid confusion, left = fast (10ms), right = slow (2000ms) -->
+               <div class="flex justify-between text-[8px] text-zinc-600 font-mono">
+                   <span>FAST (10ms)</span>
+                   <span>SLOW (2s)</span>
+               </div>
             </div>
 
           </div>
 
           <!-- ACTIONS -->
           <div class="flex flex-col gap-2 min-w-[150px]">
-             <button (click)="sim.resetSimulation()" class="bg-zinc-800 hover:bg-red-900 text-zinc-400 hover:text-white border border-zinc-600 hover:border-red-500 font-bold text-xs py-2 px-4 rounded uppercase transition-colors">
+             <div class="flex gap-1">
+                 <button (click)="saveState()" class="flex-1 bg-zinc-800 hover:bg-emerald-900 text-zinc-400 hover:text-emerald-400 border border-zinc-600 hover:border-emerald-500 font-bold text-[9px] py-1 px-2 rounded uppercase transition-colors">
+                    SAVE
+                 </button>
+                 <button (click)="loadState()" class="flex-1 bg-zinc-800 hover:bg-indigo-900 text-zinc-400 hover:text-indigo-400 border border-zinc-600 hover:border-indigo-500 font-bold text-[9px] py-1 px-2 rounded uppercase transition-colors">
+                    LOAD
+                 </button>
+             </div>
+             
+             <button (click)="triggerCrisis()" class="bg-zinc-900 hover:bg-red-900 text-red-500 hover:text-white border border-red-900 hover:border-red-500 font-bold text-[9px] py-1 px-2 rounded uppercase transition-colors animate-pulse">
+                ⚠ TRIGGER PUMP FAILURE
+             </button>
+
+             <button (click)="resetSim()" class="bg-zinc-800 hover:bg-red-900 text-zinc-400 hover:text-white border border-zinc-600 hover:border-red-500 font-bold text-xs py-2 px-4 rounded uppercase transition-colors">
                 RESET PHYSICS
              </button>
              <div class="text-[10px] text-zinc-600 font-mono text-center">
@@ -176,6 +225,9 @@ export class SimulationControlPanelComponent {
   sim = inject(SimulationService);
   appMode = inject(AppModeService);
   aiService = inject(AiConsultantService);
+  sound = inject(SoundService);
+  game = inject(GamificationService);
+  facility = inject(FacilityService);
   
   expanded = signal(false);
   
@@ -183,15 +235,70 @@ export class SimulationControlPanelComponent {
   overrides = signal<Record<string, boolean>>({});
 
   update(key: string, value: any) {
+    if (key === 'tickSpeedMs') {
+        value = Number(value);
+    }
+    
+    // 1. Update Simulation Config
     this.sim.updateConfig({ [key]: value });
+    
+    // 2. Side Effects for specific keys
+    if (key === 'growthStageDay') {
+        const day = Number(value);
+        // Reverse engineer the start date so the calendar matches the requested growth day
+        // Current Sim Date - (Day * 24h) = Start Date
+        const currentSimDate = this.facility.simDate();
+        const newStartDate = currentSimDate - ((day - 1) * 24 * 60 * 60 * 1000);
+        
+        this.facility.setStartDate('A', newStartDate);
+        this.facility.setStartDate('B', newStartDate);
+    }
+
+    this.sound.playClick();
+  }
+
+  toggleExpand() {
+      this.expanded.set(!this.expanded());
+      this.sound.playClick();
   }
 
   toggleOverride(deviceId: string) {
+    this.sound.playClick();
     const current = this.overrides()[deviceId] || false;
     const newState = !current;
     
     this.overrides.update(o => ({ ...o, [deviceId]: newState }));
     this.sim.overrideHardware(deviceId, newState);
+    
+    if (newState) this.sound.playHum();
+  }
+
+  triggerShot(room: 'A'|'B', phase: 'P1'|'P2'|'P3') {
+      this.sim.triggerIrrigation(room, phase);
+      this.sound.playValveOpen();
+      
+      // Check for "Perfect Hit" in Dryback Dash
+      const currentVwc = room === 'A' ? this.sim.roomA().vwc : this.sim.roomB().vwc;
+      this.game.checkPerfectShot(currentVwc);
+  }
+
+  resetSim() {
+      this.sim.resetSimulation();
+      this.sound.playAlert();
+  }
+
+  saveState() {
+      this.facility.saveState();
+  }
+
+  loadState() {
+      this.facility.loadState();
+  }
+
+  triggerCrisis() {
+      // Inject Chaos via Worker
+      this.sim.triggerChaos('pumpFailure', true);
+      this.game.triggerCrisisMission();
   }
 
   getOverrideClass(deviceId: string) {
@@ -205,6 +312,7 @@ export class SimulationControlPanelComponent {
       if(event.target.value) {
           const date = new Date(event.target.value);
           this.sim.setTime(date.getTime());
+          this.sound.playClick();
       }
   }
 }

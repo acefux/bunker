@@ -23,6 +23,11 @@ export interface RoomState {
   // Virtual Hardware State
   pumpActive: boolean;
   fanActive: boolean;
+  // New Failure States
+  mainPumpFailure: boolean;
+  pin18Bypass: boolean;
+  // Advanced Physics
+  ec: number; // dS/m
 }
 
 // --- CONSTANTS ---
@@ -34,6 +39,7 @@ const FIVE_TON_CAPACITY = 5.0;
 const LED_HEAT_LOAD = 3.5; // Room A Heat Source
 const BASE_TRANSPIRATION = 0.05; // Base water loss per plant per tick
 const MOISTURE_TO_RH_FACTOR = 0.8; // RH rise per unit of transpiration
+const EC_STACKING_FACTOR = 0.05; // EC rise per 1% VWC drop
 
 // --- STATE ---
 let config: SimulationConfig = {
@@ -55,7 +61,8 @@ let overrides = {
   pumpA: null as boolean | null,
   pumpB: null as boolean | null,
   acA: null as boolean | null,
-  acB: null as boolean | null
+  acB: null as boolean | null,
+  pumpFailure: false // Chaos injection
 };
 
 let reservoirLevel = 85.0; // %
@@ -73,7 +80,10 @@ let roomA: RoomState = {
   damperPos: 0, 
   coolingStatus: 'IDLE',
   pumpActive: false,
-  fanActive: true
+  fanActive: true,
+  mainPumpFailure: false,
+  pin18Bypass: false,
+  ec: 3.0
 };
 
 // Room B: Night Mode (Lights OFF) - Relies on Damper
@@ -88,7 +98,10 @@ let roomB: RoomState = {
   damperPos: 0, 
   coolingStatus: 'IDLE',
   pumpActive: false,
-  fanActive: true
+  fanActive: true,
+  mainPumpFailure: false,
+  pin18Bypass: false,
+  ec: 3.0
 };
 
 // Targets
@@ -126,6 +139,28 @@ self.onmessage = ({ data }) => {
     case 'SET_TIME':
       virtualTimestamp = data.payload.timestamp;
       break;
+    case 'SET_CHAOS':
+      if (data.payload.pumpFailure !== undefined) {
+          overrides.pumpFailure = data.payload.pumpFailure;
+      }
+      break;
+    case 'SET_FULL_STATE':
+      // Hydrate worker state from save file
+      const s = data.payload;
+      if (s.roomA) roomA = { ...roomA, ...s.roomA };
+      if (s.roomB) roomB = { ...roomB, ...s.roomB };
+      if (s.config) config = { ...config, ...s.config };
+      if (s.reservoirLevel !== undefined) reservoirLevel = s.reservoirLevel;
+      if (s.virtualTimestamp) virtualTimestamp = s.virtualTimestamp;
+      
+      // Restart loop with loaded speed
+      startLoop();
+      break;
+    case 'TOGGLE_PIN_18':
+      // Manual Bypass Toggle
+      const r = data.payload.roomId === 'A' ? roomA : roomB;
+      r.pin18Bypass = data.payload.state;
+      break;
     case 'STOP':
       clearInterval(timer);
       break;
@@ -150,13 +185,26 @@ function handleHardwareOverride(deviceId: string, state: boolean) {
 
 function triggerIrrigation(roomId: 'A' | 'B', phase: 'P1' | 'P2' | 'P3') {
   const room = roomId === 'A' ? roomA : roomB;
+  
+  // FAILURE CHECK: If Pump Failed AND Pin 18 NOT active, NO WATER!
+  if (overrides.pumpFailure && !room.pin18Bypass) {
+      return; // Mechanical Failure
+  }
+
   let spike = 0;
   switch(phase) {
     case 'P1': spike = 5; break;
     case 'P2': spike = 2; break;
     case 'P3': spike = 10; break;
   }
+  
+  // VWC Rise
   room.vwc = Math.min(100, room.vwc + spike);
+  
+  // EC Dilution (Fresh water/nutes lowers stacked EC back to feed EC ~3.0)
+  // Simple lerp towards 3.0
+  room.ec = room.ec * 0.8 + 3.0 * 0.2;
+
   // Decrease reservoir
   reservoirLevel = Math.max(0, reservoirLevel - (spike * 0.5));
 }
@@ -169,6 +217,11 @@ function tick() {
   // 0. Apply Hardware Overrides (Pre-Physics)
   if (overrides.lightsA !== null) roomA.lightsOn = overrides.lightsA;
   if (overrides.lightsB !== null) roomB.lightsOn = overrides.lightsB;
+  
+  // Pump Failure Logic
+  roomA.mainPumpFailure = overrides.pumpFailure;
+  roomB.mainPumpFailure = overrides.pumpFailure;
+
   if (overrides.pumpA !== null) roomA.pumpActive = overrides.pumpA;
   if (overrides.pumpB !== null) roomB.pumpActive = overrides.pumpB;
   
@@ -221,6 +274,11 @@ function tick() {
       coolingB = FIVE_TON_CAPACITY * 0.1;
       roomB.damperPos = 10; // Visual feedback
       roomB.coolingStatus = 'COOLING'; // It's trying, but struggling
+      
+      // THERMAL PENALTY: If B needs cooling but A is hogging it, B heats up faster due to restricted airflow
+      // JUGGLER MECHANIC: Increased penalty to force user intervention
+      roomB.temp += 0.2; // Was 0.05
+      roomB.rh += 0.5;   // Was 0.1
     } else {
       roomB.damperPos = 0;
       roomB.coolingStatus = 'IDLE';
@@ -250,6 +308,10 @@ function tick() {
     roomB.temp -= coolingB;
     roomB.rh -= coolingB * 0.4;
   }
+  
+  // CO2 Physics
+  applyCO2Dynamics(roomA);
+  applyCO2Dynamics(roomB);
 
   // 4. Physics Cleanup
   finalizeRoom(roomA);
@@ -279,11 +341,33 @@ function calculateGrowthFactor(day: number): number {
 
 function applyTranspiration(room: RoomState, amount: number) {
   // Substrate loses water (VWC Drop)
-  // Scale factor to make VWC drop realistic (e.g., 5-10% per day)
-  room.vwc = Math.max(0, room.vwc - (amount * 0.2)); 
+  const vwcDrop = amount * 0.2;
+  room.vwc = Math.max(0, room.vwc - vwcDrop); 
+  
+  // EC Stacking: As water leaves, salts stay. EC rises.
+  if (room.vwc < 45) {
+      room.ec += vwcDrop * EC_STACKING_FACTOR;
+  }
   
   // Air gains moisture (RH Rise)
   room.rh = Math.min(100, room.rh + (amount * MOISTURE_TO_RH_FACTOR));
+}
+
+function applyCO2Dynamics(room: RoomState) {
+    // CO2 Consumption (Photosynthesis) - Only when Lights ON
+    if (room.lightsOn) {
+        // Consumption rate depends on temp/vpd (simplified)
+        const consumption = 5.0; // ppm per tick
+        room.co2 = Math.max(400, room.co2 - consumption);
+        
+        // Regulator Logic (Simple Band-Bang)
+        if (room.co2 < 1000) {
+            room.co2 += 20; // Injector active
+        }
+    } else {
+        // Respiration (Plants exhale CO2 at night)
+        room.co2 += 2.0; 
+    }
 }
 
 function finalizeRoom(room: RoomState) {
@@ -295,6 +379,8 @@ function finalizeRoom(room: RoomState) {
   room.rh = parseFloat(room.rh.toFixed(2));
   room.vwc = parseFloat(room.vwc.toFixed(2));
   room.vpd = parseFloat(room.vpd.toFixed(2));
+  room.ec = parseFloat(room.ec.toFixed(2));
+  room.co2 = Math.round(room.co2);
 }
 
 function calculateVPD(tempF: number, rh: number): number {

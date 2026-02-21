@@ -16,6 +16,7 @@ declare var d3: any;
          <div class="flex gap-2">
             @if(type() === 'irrigation') {
                 <span class="flex items-center gap-1 text-[9px] text-zinc-600"><span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span> VWC</span>
+                <span class="flex items-center gap-1 text-[9px] text-zinc-600"><span class="w-1.5 h-1.5 rounded-full bg-fuchsia-500"></span> EC</span>
                 <span class="flex items-center gap-1 text-[9px] text-zinc-600"><span class="w-1.5 h-1.5 rounded-full bg-zinc-600"></span> NIGHT</span>
                 <span class="flex items-center gap-1 text-[9px] text-zinc-600"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> P0</span>
                 <span class="flex items-center gap-1 text-[9px] text-zinc-600"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> P1</span>
@@ -166,7 +167,7 @@ export class HistoryChartComponent implements AfterViewInit, OnDestroy {
 
 
         if (this.type() === 'irrigation') {
-            // --- IRRIGATION LOGIC ---
+             // --- IRRIGATION LOGIC ---
             const vwcExtent = d3.extent(data, (d: any) => d.vwc);
             const padding = (vwcExtent[1] - vwcExtent[0]) * 0.1 || 5;
             const yMin = Math.max(0, vwcExtent[0] - padding);
@@ -174,6 +175,28 @@ export class HistoryChartComponent implements AfterViewInit, OnDestroy {
             
             const y = d3.scaleLinear().domain([yMin, yMax]).nice().range([height, 0]);
 
+            // EC Scale (Right Axis)
+            const ecExtent = d3.extent(data, (d: any) => d.ec);
+            const ecPadding = (ecExtent[1] - ecExtent[0]) * 0.2 || 0.5;
+            const yEc = d3.scaleLinear().domain([Math.max(0, ecExtent[0] - ecPadding), ecExtent[1] + ecPadding]).nice().range([height, 0]);
+
+            // Draw Target Zone (40-45%)
+            const targetY1 = y(40);
+            const targetY2 = y(45);
+            
+            svg.append("rect")
+               .attr("x", 0)
+               .attr("y", targetY2)
+               .attr("width", width)
+               .attr("height", Math.abs(targetY1 - targetY2))
+               .attr("fill", "url(#vwc-gradient)") // Reuse gradient for now or make a new one
+               .attr("fill-opacity", 0.1)
+               .attr("stroke", "#22d3ee")
+               .attr("stroke-width", 1)
+               .attr("stroke-dasharray", "4,4")
+               .attr("class", "target-zone animate-pulse");
+
+            // VWC Area
             const area = d3.area()
                 .x((d: any, i: number) => x(i))
                 .y0(height)
@@ -182,12 +205,26 @@ export class HistoryChartComponent implements AfterViewInit, OnDestroy {
             
             svg.append("path").datum(data).attr("fill", "url(#vwc-gradient)").attr("d", area);
 
+            // VWC Line
             const line = d3.line()
                 .x((d: any, i: number) => x(i))
                 .y((d: any) => y(d.vwc))
                 .curve(d3.curveMonotoneX);
             
             svg.append("path").datum(data).attr("fill", "none").attr("stroke", "#22d3ee").attr("stroke-width", 2).attr("d", line);
+
+            // EC Line (Purple)
+            const lineEc = d3.line()
+                .x((d: any, i: number) => x(i))
+                .y((d: any) => yEc(d.ec))
+                .curve(d3.curveMonotoneX);
+
+            svg.append("path").datum(data)
+                .attr("fill", "none")
+                .attr("stroke", "#d946ef") // Fuchsia 500
+                .attr("stroke-width", 2)
+                .attr("stroke-dasharray", "2,2") // Dashed to distinguish
+                .attr("d", lineEc);
 
             // Phase Colors & Bars
             const getPhaseColor = (p: number) => {
@@ -229,6 +266,16 @@ export class HistoryChartComponent implements AfterViewInit, OnDestroy {
 
             const yAxis = d3.axisLeft(y).ticks(4);
             svg.append('g').call(yAxis).attr('color', '#52525b').style('font-family', 'monospace').style('font-size', '9px').select('.domain').remove();
+
+            // EC Axis (Right)
+            const yAxisEc = d3.axisRight(yEc).ticks(4);
+            svg.append('g')
+               .attr('transform', `translate(${width}, 0)`)
+               .call(yAxisEc)
+               .attr('color', '#d946ef')
+               .style('font-family', 'monospace')
+               .style('font-size', '9px')
+               .select('.domain').remove();
 
         } else {
             // --- CLIMATE WAVE GRAPH (Tri-Axis) ---

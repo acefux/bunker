@@ -50,8 +50,127 @@ export class GamificationService {
   // Ranks
   ranks = signal<DailyRank[]>(this.loadRanks());
 
+  // --- COMBO SYSTEM ---
+  comboMultiplier = signal(1.0);
+  comboTimer = signal(0);
+  isInZone = signal(false);
+
+  // --- MISSIONS ---
+  activeMission = signal<{ title: string; description: string; target: string; progress: number; total: number } | null>({
+      title: "Dryback Dash",
+      description: "Hit 3 Perfect P1 Shots in the Target Zone (40-45% VWC)",
+      target: "P1_PERFECT",
+      progress: 0,
+      total: 3
+  });
+
+  triggerCrisisMission() {
+      this.activeMission.set({
+          title: "CRITICAL FAILURE: PUMP A",
+          description: "Main Pump Failure Detected! Engage Pin 18 Bypass Manually!",
+          target: "PIN_18_BYPASS",
+          progress: 0,
+          total: 1
+      });
+      this.sound.playAlert();
+  }
+
+  // --- ACHIEVEMENTS ---
+  achievements = signal<string[]>([]);
+  
+  unlockAchievement(id: string) {
+      if (!this.achievements().includes(id)) {
+          this.achievements.update(a => [...a, id]);
+          this.sound.playAchievement();
+          this.facility.updateNewsFeed(`🏆 ACHIEVEMENT UNLOCKED: ${id}`);
+      }
+  }
+
+  // --- GAME OVER ---
+  isGameOver = computed(() => {
+      return this.roomAVitality() <= 0 || this.roomBVitality() <= 0;
+  });
+
   constructor() {
-      // Award sound logic could go here based on state changes
+      // Combo Tick
+      effect((onCleanup) => {
+          const timer = setInterval(() => {
+              if (this.appMode.isSim() && !this.facility.simPaused()) {
+                  this.updateCombo();
+                  
+                  // Random Crisis Check (Low probability)
+                  if (Math.random() < 0.005 && !this.activeMission()) { // 0.5% chance per second
+                      // this.triggerCrisisMission(); // Optional: Enable for auto-chaos
+                  }
+              }
+          }, 1000);
+          onCleanup(() => clearInterval(timer));
+      });
+  }
+
+  private updateCombo() {
+      const rA = this.facility.roomA();
+      const rB = this.facility.roomB();
+      
+      // Check if both rooms are "Green" (Vitality > 80)
+      const vA = this.roomAVitality();
+      const vB = this.roomBVitality();
+      
+      if (vA > 80 && vB > 80) {
+          this.isInZone.set(true);
+          this.comboTimer.update(t => t + 1);
+          
+          // Multiplier Logic
+          const t = this.comboTimer();
+          if (t > 60) this.comboMultiplier.set(1.5);
+          if (t > 120) this.comboMultiplier.set(2.0);
+          if (t > 300) this.comboMultiplier.set(4.0); // MAX
+      } else {
+          this.isInZone.set(false);
+          this.comboTimer.set(0);
+          this.comboMultiplier.set(1.0);
+      }
+  }
+
+  registerAction(actionType: string, value: any) {
+      // Mission Logic
+      const mission = this.activeMission();
+      if (mission && mission.target === actionType) {
+          this.activeMission.update(m => {
+              if (!m) return null;
+              const newProgress = m.progress + 1;
+              if (newProgress >= m.total) {
+                  this.sound.playAchievement();
+                  this.facility.updateNewsFeed(`🏆 MISSION COMPLETE: ${m.title}`);
+                  return null; // Clear mission or load next
+              }
+              return { ...m, progress: newProgress };
+          });
+      }
+  }
+
+  checkPerfectShot(vwc: number) {
+      // Target Zone: 40-45%
+      if (vwc >= 40 && vwc <= 45) {
+          this.sound.playPerfectHit();
+          this.registerAction('P1_PERFECT', 1);
+          
+          // Check for "First Dryback" achievement
+          this.unlockAchievement('FIRST_PERFECT_SHOT');
+          
+          return true;
+      } else {
+          this.sound.playError();
+          return false;
+      }
+  }
+
+  checkThermalJuggler(roomB: RoomState) {
+      // If Room B is surviving the penalty (Temp < 80) while Room A is cooling
+      if (roomB.coolingStatus === 'COOLING' && roomB.damperPos === 10 && roomB.temp < 80) {
+          // This is hard to track without state, but let's just give it if they toggle AC manually
+          // Actually, we'll call this from the UI when they toggle AC B
+      }
   }
 
   grantManualBadge(grade: 'S'|'A'|'B'|'C'|'F', roomId: string) {

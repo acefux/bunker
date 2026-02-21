@@ -1,10 +1,12 @@
 
-import { Injectable, signal, computed, inject, effect } from '@angular/core';
+import { Injectable, signal, computed, inject, effect, Injector } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { AiConsultantService } from './ai-consultant.service';
 import { StrainService } from './strain.service';
 import { LogService } from './log.service';
 import { ChaosService } from './chaos.service';
+import { SoundService } from './sound.service';
+import { GamificationService } from './gamification.service';
 import { RoomState, RoomConfig, AiAction, SensorData, AiPersona, StressTestReport, StrainProfile, HvacState } from '../models';
 
 import { AppModeService } from './app-mode.service';
@@ -41,7 +43,13 @@ export class FacilityService {
   private logService = inject(LogService);
   private chaosService = inject(ChaosService);
   private appMode = inject(AppModeService);
+  private soundService = inject(SoundService);
+  private injector = inject(Injector);
   private worker?: Worker;
+
+  private get gamificationService() {
+      return this.injector.get(GamificationService);
+  }
 
   // Simulation Control
   simSpeed = signal<number>(1); 
@@ -49,6 +57,16 @@ export class FacilityService {
   simMode = signal<'WORKER' | 'FALLBACK'>('WORKER');
   simDate = signal<number>(Date.now()); // New: Global Clock
   
+  // Global Simulation Config (Plant Count, Ambient, etc)
+  simGlobalConfig = signal<any>({
+      plantCount: 100,
+      growthStageDay: 21,
+      strainMultiplier: 1.0,
+      ambientProfile: 'CASTLEGAR_SUMMER',
+      tickSpeedMs: 1000
+  });
+  reservoirLevel = signal<number>(85);
+
   workerResponding = signal<boolean>(false);
   
   timeOfDayMin = signal<number>(6 * 60); 
@@ -187,6 +205,96 @@ export class FacilityService {
     }
   }
 
+  // --- PERSISTENCE ---
+  saveState() {
+      const state = {
+          roomA: this.roomA(),
+          roomB: this.roomB(),
+          simDate: this.simDate(),
+          ranks: this.gamificationService.ranks()
+      };
+      if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('bunker_save_state', JSON.stringify(state));
+          this.logService.logAction("GAME STATE SAVED.");
+          this.soundService.playAchievement();
+      }
+  }
+
+  loadState() {
+      if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem('bunker_save_state');
+          if (raw) {
+              const state = JSON.parse(raw);
+              
+              // 1. Update UI Signals immediately
+              this.roomA.set(state.roomA);
+              this.roomB.set(state.roomB);
+              this.simDate.set(state.simDate);
+              if (state.ranks) this.gamificationService.ranks.set(state.ranks);
+
+              // 2. Sync Worker (CRITICAL: Prevents worker from overwriting loaded state with old physics state)
+              if (this.simMode() === 'WORKER') {
+                  this.worker?.postMessage({ 
+                      type: 'SET_FULL_STATE', 
+                      payload: {
+                          roomA: state.roomA,
+                          roomB: state.roomB,
+                          config: this.simGlobalConfig(), // Or save/load global config too
+                          reservoirLevel: state.roomA.reservoirLevel, // Assuming shared or synced
+                          virtualTimestamp: state.simDate
+                      }
+                  });
+              }
+              
+              this.logService.logAction("GAME STATE LOADED.");
+              this.soundService.playBootSequence();
+          }
+      }
+  }
+
+  togglePin18(roomId: string) {
+      if (this.simMode() === 'WORKER') {
+          this.worker?.postMessage({ type: 'TOGGLE_PIN_18', payload: { roomId, state: true } }); // Latch ON
+          this.logService.logCritical(`[${roomId}] PIN 18 MANUAL BYPASS ENGAGED.`);
+          this.soundService.playValveOpen();
+          
+          // Check Mission
+          this.gamificationService.registerAction('PIN_18_BYPASS', roomId);
+      }
+  }
+
+  // --- WORKER PROXY METHODS (For SimulationService) ---
+  
+  overrideHardware(deviceId: string, state: boolean) {
+      if (this.simMode() === 'WORKER') {
+          this.worker?.postMessage({ type: 'OVERRIDE_HARDWARE', payload: { deviceId, state } });
+      }
+  }
+
+  setReservoirLevel(level: number) {
+      if (this.simMode() === 'WORKER') {
+          this.worker?.postMessage({ type: 'SET_RESERVOIR', payload: { level } });
+      }
+  }
+
+  triggerIrrigation(room: 'A' | 'B', phase: 'P1' | 'P2' | 'P3') {
+      if (this.simMode() === 'WORKER') {
+          this.worker?.postMessage({ type: 'TRIGGER_IRRIGATION', payload: { room, phase } });
+      }
+  }
+
+  triggerChaos(type: string, value: boolean) {
+      if (this.simMode() === 'WORKER') {
+          this.worker?.postMessage({ type: 'SET_CHAOS', payload: { [type]: value } });
+      }
+  }
+
+  updateGlobalConfig(config: any) {
+      if (this.simMode() === 'WORKER') {
+          this.worker?.postMessage({ type: 'UPDATE_CONFIG', payload: config });
+      }
+  }
+
   // --- SPOOFING / INTERCEPTION ---
   private handleStateUpdate(payload: any) {
       // 1. Update Time (The Multiplexer)
@@ -197,9 +305,23 @@ export class FacilityService {
           const date = new Date(payload.virtualTimestamp);
           const minutes = date.getHours() * 60 + date.getMinutes();
           this.timeOfDayMin.set(minutes);
+      } else {
+          console.warn('FacilityService: No virtualTimestamp in payload', payload);
       }
 
-      // 2. Merge Room Data (Don't Overwrite!)
+      // 2. Update Global Config & Reservoir
+      if (payload.config) {
+          this.simGlobalConfig.set(payload.config);
+          // Sync local speed signal
+          if (payload.config.tickSpeedMs) {
+             // Convert ms to speed multiplier (approx) if needed, or just rely on config
+          }
+      }
+      if (payload.reservoirLevel !== undefined) {
+          this.reservoirLevel.set(payload.reservoirLevel);
+      }
+
+      // 3. Merge Room Data (Don't Overwrite!)
       this.updateRoomFromWorker(this.roomA, payload.roomA);
       this.updateRoomFromWorker(this.roomB, payload.roomB);
       
@@ -269,7 +391,7 @@ export class FacilityService {
       });
   }
 
-  private calculatePhase(cfg: RoomConfig, currentMin: number): string {
+  private calculatePhase(cfg: RoomConfig, currentMin: number): 'P0' | 'P1' | 'P2' | 'P3' | 'NIGHT' | 'FLOOD' | 'DRAIN' {
       const startM = cfg.lightsOnHour * 60;
       const dayM = cfg.dayLength * 60;
       const rel = (currentMin - startM + 1440) % 1440;
@@ -368,8 +490,13 @@ export class FacilityService {
       this.stopFallbackSimulation(); 
       this.fallbackInterval = setInterval(() => {
           if (this.simPaused()) return;
-          const REAL_MINUTES_PER_TICK = 0.1 / 60;
-          const minutesToAdd = REAL_MINUTES_PER_TICK * this.simSpeed();
+          
+          // Calculate time step based on tickSpeedMs
+          // Target: 1 Sim Minute per tickSpeedMs
+          // Loop runs every 100ms
+          // Minutes to add = 100 / tickSpeedMs
+          const tickSpeed = this.simGlobalConfig().tickSpeedMs || 1000;
+          const minutesToAdd = 100 / tickSpeed;
           
           this.fallbackTimeAccumulator += minutesToAdd;
           
@@ -383,7 +510,8 @@ export class FacilityService {
               this.updateFallbackRoom(this.roomB, wholeMinutes);
               this.roomVeg.update(r => ({...r, temp: 75 + Math.random()}));
           } else {
-             if (this.simSpeed() < 10) {
+             // Jitter for visual liveness if slow
+             if (tickSpeed > 500) {
                  this.jitterSensors(this.roomA);
                  this.jitterSensors(this.roomB);
              }
@@ -894,6 +1022,8 @@ export class FacilityService {
 
       dayOfCycle: isFlower ? 21 : 14, 
       activeMilestones: [], phase: 'P0', isDay: true, nextShotMin: 0, shotsFiredToday: 0, temp: 78, canopyTemp: 78, rh: 60, vwc: baseVwc, co2: 1200, ec: 3.0, vpd: 1.1, valveOpen: false, valveOpenSince: null, lightsOn: true, 
+      damperPos: 100,
+      coolingStatus: 'IDLE',
       hvac,
       reservoirLevel: 85, // Default start level
       dryback24h: 0, 
